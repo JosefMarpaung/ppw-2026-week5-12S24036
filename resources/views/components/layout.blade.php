@@ -39,6 +39,10 @@
                     <li class="nav-item">
                         <a class="nav-link {{ request()->is('buku*') ? 'active fw-bold' : '' }}" href="{{ route('buku.index') }}">Katalog Buku</a>
                     </li>
+                    {{-- Menu navigasi menuju sirkulasi peminjaman buku (ACID) --}}
+                    <li class="nav-item">
+                        <a class="nav-link {{ request()->is('peminjaman*') ? 'active fw-bold' : '' }}" href="{{ route('peminjaman.index') }}">Sirkulasi Peminjaman</a>
+                    </li>
                     {{-- Menu navigasi menuju manajemen kategori --}}
                     <li class="nav-item">
                         <a class="nav-link {{ request()->is('kategori*') ? 'active fw-bold' : '' }}" href="{{ route('kategori.index') }}">Kategori Buku</a>
@@ -50,12 +54,31 @@
 
     {{-- Kontainer Utama Konten Aplikasi --}}
     <main class="container pb-5">
-        {{-- Menampilkan notifikasi sukses (Flash Session Message) jika aksi Controller berhasil --}}
+        {{-- 1. Menampilkan notifikasi hijau jika transaksi / aksi berhasil (Flash Session 'success') --}}
         @if(session('success'))
             <div class="alert alert-success alert-dismissible fade show shadow-sm" role="alert">
-                {{-- Menampilkan pesan teks yang dikirimkan melalui ->with('success', ...) --}}
                 <strong>Berhasil!</strong> {{ session('success') }}
-                {{-- Tombol close untuk menutup alert notifikasi --}}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        @endif
+
+        {{-- 2. Menampilkan notifikasi merah jika transaksi ACID ditolak/rollback (Flash Session 'error') --}}
+        @if(session('error'))
+            <div class="alert alert-danger alert-dismissible fade show shadow-sm" role="alert">
+                <strong>Peringatan Sistem:</strong> {{ session('error') }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        @endif
+
+        {{-- 3. Menampilkan notifikasi error validasi formulir jika ada input yang salah --}}
+        @if($errors->any())
+            <div class="alert alert-warning alert-dismissible fade show shadow-sm" role="alert">
+                <strong>Perhatian:</strong> Mohon periksa kembali input formulir Anda.
+                <ul class="mb-0 mt-2">
+                    @foreach($errors->all() as $err)
+                        <li>{{ $err }}</li>
+                    @endforeach
+                </ul>
                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
         @endif
