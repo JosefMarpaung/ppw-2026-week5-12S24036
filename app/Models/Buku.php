@@ -9,6 +9,8 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 // Mengimpor kelas relasi BelongsTo untuk menghubungkan relasi kebalikan (inverse) One-to-Many
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+// Mengimpor kelas relasi HasMany untuk relasi 1 Buku memiliki banyak Peminjaman
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 // Mendefinisikan Model Buku yang merepresentasikan tabel 'bukus' di database
 class Buku extends Model
@@ -34,14 +36,22 @@ class Buku extends Model
     ];
 
     /**
-     * Mendefinisikan relasi kebalikan (inverse) One-to-Many:
+     * Relasi One-to-Many ke Kategori:
      * Setiap Buku pasti dimiliki oleh (BelongsTo) tepat satu Kategori.
-     *
-     * @return BelongsTo
      */
     public function kategori(): BelongsTo
     {
-        // Mengembalikan relasi bawaan Eloquent bahwa Buku ini terikat ke Model Kategori induknya
+        // Mengembalikan relasi bahwa Buku ini terikat ke Model Kategori induknya
         return $this->belongsTo(Kategori::class);
+    }
+
+    /**
+     * Relasi One-to-Many ke Peminjaman (Sesuai Modul Praktikum Halaman 6 Poin 1):
+     * Satu Buku dapat dipinjam berkali-kali / memiliki banyak (HasMany) riwayat Peminjaman.
+     */
+    public function peminjamans(): HasMany
+    {
+        // Menghubungkan Buku ke seluruh riwayat di tabel peminjamans
+        return $this->hasMany(Peminjaman::class);
     }
 }
