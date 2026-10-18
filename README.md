@@ -1,82 +1,129 @@
-# SIPUS-Del — Sistem Informasi Perpustakaan Kampus Del
+# SIPUS-Del (Tahap 2) — Sistem Informasi Perpustakaan Kampus Del
+### Praktikum Minggu 06: Konektivitas Basis Data Persisten, Transaksi ACID & Concurrency Locking, Fluent Query Builder, serta Manajemen Sesi & Autentikasi
 
-**Mata Kuliah:** Pemrograman & Pengujian Web (12S3101)  
-**Institusi:** Institut Teknologi Del — Fakultas Informatika dan Teknik Elektro  
-**Tahun Akademik:** Ganjil 2026/2027  
-**NIM Pengembang:** 12S24036  
-
----
-
-## 📌 Deskripsi Proyek
-**SIPUS-Del** adalah aplikasi pengelolaan katalog dan sirkulasi koleksi pustaka berbasis web server-side rendering menggunakan framework **Laravel 11.x**. Proyek ini menerapkan arsitektur **Model-View-Controller (MVC)** yang bersih, perlindungan keamanan data, optimasi performa kueri basis data Eloquent, dan antarmuka bertema **Del Royal Purple (`#4C1D95`)**.
-
----
-
-## 🚀 Fitur dan Spesifikasi Teknis
-1. **Pola Arsitektur MVC & Separation of Concerns:**
-   - **Model (`app/Models`):** `Kategori` dan `Buku` mengimplementasikan Active Record dengan proteksi Mass Assignment (`$fillable`).
-   - **Controller (`app/Http/Controllers`):** `KategoriController` dan `BukuController` menangani 7 aksi RESTful baku secara terpisah dari logika antarmuka dan basis data.
-   - **View (`resources/views`):** Memanfaatkan Master Shell Layout `<x-layout>`, Blade components, Bootstrap 5, pagination, dan perulangan aman `@forelse`.
-2. **Relasi Data Eloquent (One-to-Many):**
-   - Satu Kategori menaungi banyak Buku (`hasMany(Buku::class)`).
-   - Satu Buku dimiliki oleh satu Kategori (`belongsTo(Kategori::class)`).
-3. **Validasi Masukan Server-Side & Keamanan Web:**
-   - Validasi ketat via `$request->validate()` (ISBN unik, judul minimal 5 karakter, stok minimal 0, integritas kunci asing).
-   - Seluruh formulir terproteksi token CSRF (`@csrf`) dan Method Spoofing (`@method('PUT')`, `@method('DELETE')`).
-4. **Otomasi Mock Data (Seeders & Factories):**
-   - Tersedia Seeder dan Factory memanfaatkan pustaka **Faker** yang menghasilkan 5 Kategori pokok dan 20 data Buku realistis.
-5. **Mitigasi N+1 Query Problem via Eager Loading:**
-   - Menggunakan `Buku::with('kategori')->latest()->paginate(10)` pada halaman utama katalog untuk memangkas kueri SQL menjadi tepat 2 kueri.
+* **Mata Kuliah:** Pemrograman & Pengujian Web (12S3101)
+* **Institusi:** Institut Teknologi Del — Fakultas Informatika dan Teknik Elektro
+* **Tahun Akademik:** Ganjil 2026/2027
+* **Dosen Pengampu:** Chandro Pardede, S.Kom., M.Sc.
+* **NIM Pengembang:** 12S24036
+* **Nama Pengembang:** Josef Marpaung
+* **Branch Git:** `week6-db-session`
 
 ---
 
-## ⚙️ Panduan Instalasi & Menjalankan Proyek
+## 📌 1. Kredensial Akun Pustakawan Uji Coba
 
-Ikuti langkah-langkah berikut untuk menjalankan aplikasi pada lingkungan lokal:
+Sesuai spesifikasi modul, akun pustakawan telah ditanamkan melalui `DatabaseSeeder.php`:
 
-```bash
-# 1. Kloning repositori proyek
-git clone https://github.com/JosefMarpaung/ppw-2026-week5-12S24036.git
-cd ppw-2026-week5-12S24036
+| Parameter | Kredensial Resmi |
+| :--- | :--- |
+| **Alamat Email** | `pustakawan@del.ac.id` |
+| **Kata Sandi (Password)** | `password123` |
+| **Hak Akses** | Pustakawan Penuh (CRUD Buku, Kategori, Sirkulasi Peminjaman & Pengembalian) |
 
-# 2. Pasang dependensi PHP (jika belum terpasang)
-composer install
+---
 
-# 3. Konfigurasi berkas environment
-cp .env.example .env
-php artisan key:generate
+## 🗄️ 2. Diagram Hubungan Entitas (Entity Relationship Diagram - ERD)
 
-# 4. Eksekusi migrasi skema dan suntikkan mock data seeder
-php artisan migrate:fresh --seed
+Aplikasi SIPUS-Del Tahap 2 menghubungkan entitas relasional persisten pada MySQL 8.0 (InnoDB) dengan integritas referensial ketat:
 
-# 5. Jalankan server pengembangan lokal Laravel
-php artisan serve
+```mermaid
+erDiagram
+    KATEGORIS ||--o{ BUKUS : "memiliki relasi One-to-Many"
+    BUKUS ||--o{ PEMINJAMANS : "memiliki relasi One-to-Many"
+    USERS ||--o{ SESSIONS : "menyimpan state autentikasi"
+
+    KATEGORIS {
+        bigint id PK
+        string kode_kategori UK
+        string nama_kategori
+        timestamps created_at
+    }
+
+    BUKUS {
+        bigint id PK
+        string isbn UK
+        string judul
+        string penulis
+        string penerbit
+        int tahun_terbit
+        bigint kategori_id FK
+        int stok
+        text sinopsis
+        timestamps created_at
+    }
+
+    PEMINJAMANS {
+        bigint id PK
+        string kode_pinjam UK
+        bigint buku_id FK
+        string nim_peminjam
+        string nama_peminjam
+        date tanggal_pinjam
+        date tanggal_jatuh_tempo
+        date tanggal_kembali
+        enum status "dipinjam, dikembalikan"
+        timestamps created_at
+    }
+
+    USERS {
+        bigint id PK
+        string name
+        string email UK
+        string password
+        timestamps created_at
+    }
 ```
-Akses aplikasi melalui peramban web di: `http://localhost:8000`
 
 ---
 
-## 🔍 Pembuktian Audit Kinerja SQL (Mitigasi N+1 Problem)
+## ⚙️ 3. Implementasi Spesifikasi Teknis Wajib
 
-Untuk membuktikan efektivitas **Eager Loading** (`with('kategori')`) dalam meniadakan lonjakan kueri SQL (N+1 Problem), listener `DB::listen` dipasang pada `app/Providers/AppServiceProvider.php` yang mencatat eksekusi query ke `storage/logs/laravel.log`.
+### A. Skema Tabel `peminjamans` & Relasi Eloquent (Bobot 20%)
+* Tabel `peminjamans` memiliki Foreign Key `buku_id` yang terikat ke tabel `bukus` dengan aturan `cascadeOnDelete()`.
+* Model `Peminjaman` mengimplementasikan `$fillable` lengkap dan relasi `belongsTo(Buku::class)`.
+* Model `Buku` mengimplementasikan relasi `hasMany(Peminjaman::class)`.
 
-### Bukti Cuplikan Log Kueri SQL:
-```log
-[2026-10-10 06:47:17] local.INFO: [SQL AUDIT] (3.93 ms) select count(*) as "aggregate" from "bukus"
-[2026-10-10 06:47:17] local.INFO: [SQL AUDIT] (0.45 ms) select * from "bukus" order by "created_at" desc limit 10 offset 0
-[2026-10-10 06:47:17] local.INFO: [SQL AUDIT] (0.44 ms) select * from "kategoris" where "kategoris"."id" in (1, 4, 5)
-```
+### B. Transaksi Basis Data ACID & Concurrency Locking (Bobot 25%)
+* **Peminjaman Buku:** Seluruh operasi dibungkus dalam `DB::transaction(..., 3)`. Baris buku dikunci menggunakan Pessimistic Locking `Buku::where('id', $id)->lockForUpdate()->firstOrFail()`.
+* **Pencegahan Race Condition & Rollback Stok 0:** Jika `stok < 1`, sistem melempar `\RuntimeException` yang memicu rollback otomatis sehingga stok buku tidak pernah minus.
+* **Pencegahan Duplikasi Pinjam:** Sistem memverifikasi bahwa mahasiswa dengan NIM yang sama tidak dapat meminjam buku yang sama jika belum dikembalikan.
+* **Pengembalian Buku:** Dibungkus dalam `DB::transaction()` + `lockForUpdate()`, mengubah status menjadi `'dikembalikan'`, mencatat `tanggal_kembali`, serta memulihkan kuantitas stok secara atomik (`$buku->increment('stok')`).
+* **Error Handling:** Menangkap `QueryException` dan mencatatnya ke `storage/logs/laravel.log` via `Log::error()`.
 
-### Analisis Kinerja:
-* **Tanpa Eager Loading (Lazy Loading):** Sistem akan mengeksekusi 1 kueri untuk mengambil buku + 10 kueri tambahan untuk setiap kategori individual = **11 kueri SQL**.
-* **Dengan Eager Loading (`with('kategori')`):** Sistem hanya mengeksekusi **tepat 2 kueri terpadu** (mengambil koleksi buku dan kueri `WHERE "id" IN (...)`), mereduksi beban I/O basis data secara optimal.
+### C. Fluent Query Builder (`DB::table`) & Optimasi Katalog (Bobot 15%)
+* **Kartu Analitik:** Menampilkan 4 kartu statistik perpustakaan menggunakan `DB::table()` (`count` judul, `sum` stok tersedia, `count` buku sedang dipinjam, dan `count` buku dikembalikan).
+* **Mitigasi N+1 Problem:** Katalog buku menggunakan `Buku::with('kategori')->withCount('peminjamans')` untuk menghitung relasi peminjaman tanpa overhead kueri berulang.
+* **Filter Dinamis:** Menerapkan klausa kondisional `when()` untuk pencarian berdasarkan judul, penulis, ISBN, dan filter kategori, dilengkapi paginasi `withQueryString()`.
+
+### D. Manajemen Sesi & Autentikasi Pustakawan (Bobot 25%)
+* **Autentikasi Aman:** Menggunakan `Auth::attempt()` pada `AuthController`.
+* **Anti-Session Fixation:** Wajib menjalankan `$request->session()->regenerate()` saat login untuk memperbarui Session ID.
+* **Logout Higienis:** Menjalankan `$request->session()->invalidate()` dan `regenerateToken()`.
+* **Proteksi Middleware:** Rute mutasi data (CRUD buku/kategori, peminjaman, pengembalian) diproteksi penuh oleh middleware `auth`.
+* **Manajemen State & HTTP Cookie:** Menyimpan waktu login pada Session (`login_timestamp`), riwayat pencarian terakhir (`last_search_keyword`), dan menyimpan email pengguna pada cookie aman via `Cookie::queue('del_last_user_email', ..., 10080)`.
 
 ---
 
-## 📜 Riwayat Commit Git (Conventional Commits)
-Repositori ini dikelola dengan standar *Conventional Commits* bertahap:
-1. `feat(migration): create kategoris and bukus tables schema`
-2. `feat(model): define relationships and fillable attributes`
-3. `feat(controller): implement restful actions and server validation`
-4. `feat(views): construct blade component layout and crud templates`
-5. `perf(eager-loading): optimize sql queries to prevent n+1 problem`
+## 📸 4. Bukti Pengujian Sistem (Audit Evidence)
+
+### 1. Bukti Penolakan Transaksi ACID saat Stok = 0 (Rollback Atomik)
+*Sistem menolak peminjaman buku dengan stok 0 dan menampilkan peringatan sistem:*  
+![Bukti Penolakan Stok 0](docs/screenshots/bukti-acid-rollback.png)
+
+### 2. Bukti Pengembalian Buku Atomik & Pemulihan Stok
+*Status sirkulasi berhasil diubah menjadi Dikembalikan dan stok fisik buku bertambah otomatis:*  
+![Bukti Pengembalian Buku](docs/screenshots/bukti-pengembalian-buku.png)
+
+### 3. Bukti Audit Cookie HttpOnly & SameSite pada Browser DevTools
+*Inspeksi tab Application -> Cookies menunjukkan cookie `laravel_session` dan `del_last_user_email` terlindungi flag HttpOnly:*  
+![Bukti DevTools Cookie](docs/screenshots/bukti-audit-cookie-httponly.png)
+
+---
+
+## 📜 5. Riwayat Commit Terstruktur (Conventional Commits)
+1. `feat(migration): create peminjamans table with foreign key to bukus`
+2. `feat(transaction): implement ACID book borrowing and return with lockForUpdate`
+3. `feat(query-builder): add library analytics dashboard and dynamic search`
+4. `feat(auth-session): implement librarian login, session regeneration, and cookies`
+5. `docs: complete week 6 documentation, ERD, and ACID test audit`
