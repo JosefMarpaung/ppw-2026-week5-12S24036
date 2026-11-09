@@ -1,0 +1,33 @@
+openapi: 3.0.3
+info:
+  title: SIPUS-Del RESTful Web API
+  version: 1.0.0
+  description: Kontrak Resmi Layanan REST API Perpustakaan Kampus Del (Minggu 9).
+servers:
+  - url: http://localhost:8000/api/v1
+paths:
+  /auth/login:
+    post:
+      summary: Login Pustakawan menerbitkan Bearer Token
+  /bukus:
+    get:
+      summary: Daftar katalog buku terpaginasi
+    post:
+      summary: Tambah buku baru (Bearer Token)
+  /bukus/{id}:
+    get:
+      summary: Detail satu buku
+    put:
+      summary: Penggantian utuh data buku (PUT)
+    patch:
+      summary: Pengubahan sebagian data buku (PATCH)
+    delete:
+      summary: Hapus buku (Tolak 409 bila ada pinjaman aktif)
+  /peminjamans:
+    get:
+      summary: Daftar transaksi peminjaman (Bearer Token)
+    post:
+      summary: Peminjaman buku baru ACID (lockForUpdate)
+  /peminjamans/{id}/kembalikan:
+    patch:
+      summary: Pengembalian buku dan penambahan stok ACID

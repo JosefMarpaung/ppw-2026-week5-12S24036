@@ -46,3 +46,9 @@ Route::middleware('auth')->group(function () {
     // 20. Memproses pengembalian buku dan pemulihan stok secara atomik
     Route::patch('/peminjaman/{id}/kembalikan', [PeminjamanController::class, 'kembalikan'])->name('peminjaman.kembalikan');
 });
+
+use App\Http\Controllers\Soap\LibrarySoapController;
+
+// Rute Layanan SOAP Bebas Pustaka Yudisium
+Route::get('/soap/sipus.wsdl', [LibrarySoapController::class, 'wsdl']); // 1. URL publik kontrak WSDL
+Route::post('/soap/sipus', [LibrarySoapController::class, 'handle']);  // 2. URL penerima amplop SOAP XML
