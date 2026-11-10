@@ -1,33 +1,392 @@
+# ==============================================================================
+# SPESIFIKASI KONTRAK LAYANAN OPENAPI 3.0 (SWAGGER) - REST SERVICE CONTRACT
+# Sesuai Modul Praktikum PPW Minggu 09 (Halaman 8, 30–31, & 35 Poin 5)
+# Fungsi: Sebagai pengganti WSDL pada arsitektur SOAP tradisional.
+# Dokumen ini mendefinisikan secara resmi bagaimana klien (Mobile/Frontend)
+# mengonsumsi REST API SIPUS-Del tanpa perlu membongkar kode program PHP.
+# ==============================================================================
+
+# 1. Versi spesifikasi OpenAPI resmi yang digunakan (OpenAPI v3.0.3 standar industri)
 openapi: 3.0.3
+
+# 2. Metadata umum mengenai layanan Web API
 info:
-  title: SIPUS-Del RESTful Web API
+  # 2.1 Judul resmi antarmuka layanan
+  title: SIPUS-Del Academic Library RESTful Web API
+  # 2.2 Versi rilis kontrak API saat ini
   version: 1.0.0
-  description: Kontrak Resmi Layanan REST API Perpustakaan Kampus Del (Minggu 9).
+  # 2.3 Deskripsi tujuan bisnis, standar kematangan (RMM Level 3), dan format penanganan galat
+  description: >
+    Dokumen Kontrak Resmi Layanan RESTful Web API Sistem Informasi Perpustakaan Kampus Del (SIPUS-Del).
+    Disusun untuk memenuhi Tugas Mandiri Praktikum Minggu 09 Mata Kuliah Pemrograman & Pengujian Web (12S3101).
+    Mematuhi Richardson Maturity Model Level 3 (Hypermedia HATEOAS) & Standar IETF RFC 7807 (Problem Details).
+  # 2.4 Informasi kontak penanggung jawab / pengembang mahasiswa
+  contact:
+    name: Josef Christian Marpaung (NIM 12S24036)
+    email: pustakawan@del.ac.id
+
+# 3. Daftar server tujuan (Base URL) tempat API ini di-hosting
 servers:
+  # 3.1 Alamat server lokal pengembangan
   - url: http://localhost:8000/api/v1
+    description: Server Lokal Pengembangan (Local Development Server)
+
+# 4. Definisi komponen yang dapat digunakan ulang (Reusable Components)
+components:
+
+  # 4.1 Skema Keamanan (Security Schemes)
+  securitySchemes:
+    # Definisi autentikasi token Bearer (Laravel Sanctum)
+    BearerAuth:
+      type: http                 # Menggunakan protokol HTTP Authentication standar
+      scheme: bearer             # Skema Bearer Token (Authorization: Bearer <token>)
+      bearerFormat: Sanctum      # Format token yang diterbitkan oleh Laravel Sanctum
+      description: Masukkan string plainTextToken hasil login dari endpoint POST /auth/login
+
+  # 4.2 Skema Struktur Data (Data Models / Schemas)
+  schemas:
+
+    # Skema representasi payload saat menambah atau mengganti data buku
+    BukuInput:
+      type: object
+      # Kolom-kolom yang wajib diisi (Required attributes)
+      required:
+        - isbn
+        - judul
+        - penulis
+        - penerbit
+        - tahun_terbit
+        - kategori_id
+        - stok
+      # Definisi atribut beserta tipe data dan contoh nilainya
+      properties:
+        isbn:
+          type: string
+          example: "978-602-9999"
+          description: Nomor unik ISBN buku (Wajib unik di tabel bukus)
+        judul:
+          type: string
+          example: "Sistem Terdistribusi & Microservices"
+          description: Judul lengkap buku
+        penulis:
+          type: string
+          example: "Josef Christian Marpaung"
+          description: Nama pengarang buku
+        penerbit:
+          type: string
+          example: "Del Press"
+          description: Nama penerbit buku
+        tahun_terbit:
+          type: integer
+          minimum: 1900
+          example: 2026
+          description: Angka tahun terbit buku
+        kategori_id:
+          type: integer
+          example: 1
+          description: ID referensi kategori yang valid di tabel kategoris
+        stok:
+          type: integer
+          minimum: 0
+          example: 10
+          description: Jumlah stok fisik buku yang tersedia (tidak boleh minus)
+        sinopsis:
+          type: string
+          nullable: true
+          example: "Panduan arsitektur modern berorientasi layanan dan RESTful API."
+          description: Teks ringkasan sinopsis (bersifat opsional/nullable)
+
+    # Skema representasi payload saat meminjam buku (Sirkulasi ACID)
+    PeminjamanInput:
+      type: object
+      required:
+        - buku_id
+        - nim_peminjam
+        - nama_peminjam
+      properties:
+        buku_id:
+          type: integer
+          example: 2
+          description: ID buku yang akan dipinjam
+        nim_peminjam:
+          type: string
+          example: "12S24036"
+          description: NIM mahasiswa peminjam
+        nama_peminjam:
+          type: string
+          example: "Josef Christian Marpaung"
+          description: Nama lengkap mahasiswa peminjam
+        durasi_hari:
+          type: integer
+          minimum: 1
+          maximum: 30
+          default: 7
+          example: 7
+          description: Masa peminjaman dalam hitungan hari (default 7 hari)
+
+    # Skema format respons galat standar IETF RFC 7807 (Problem Details for HTTP APIs)
+    ProblemDetails:
+      type: object
+      properties:
+        type:
+          type: string
+          example: "http://localhost:8000/docs/errors/validation-failed"
+          description: URI penunjuk dokumen penjelasan galat
+        title:
+          type: string
+          example: "Unprocessable Content"
+          description: Ringkasan singkat kategori masalah HTTP
+        status:
+          type: integer
+          example: 422
+          description: Kode status HTTP numerik
+        detail:
+          type: string
+          example: "Satu atau lebih atribut input tidak memenuhi aturan validasi bisnis."
+          description: Penjelasan mendalam penyebab galat
+        instance:
+          type: string
+          example: "/api/v1/peminjamans"
+          description: URI endpoint yang memicu galat ini
+
+# 5. Definisi Peta Rute & Operasi Layanan (Paths / Endpoints)
 paths:
+
+  # ----------------------------------------------------------------------------
+  # A. ENDPOINT AUTENTIKASI STATELESS (POST /auth/login, GET /auth/me, POST /auth/logout)
+  # ----------------------------------------------------------------------------
   /auth/login:
     post:
-      summary: Login Pustakawan menerbitkan Bearer Token
+      summary: Login Pustakawan & Penerbitan Stateless Bearer Token
+      description: Memverifikasi email dan password pustakawan, lalu menerbitkan token Sanctum.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, example: "pustakawan@del.ac.id" }
+                password: { type: string, example: "password123" }
+      responses:
+        '200':
+          description: Otentikasi berhasil dan mengembalikan token string
+        '401':
+          description: Kredensial salah (RFC 7807 Invalid Credentials)
+
+  /auth/me:
+    get:
+      summary: Menampilkan Profil Pustakawan Pemilik Token Aktif
+      security:
+        - BearerAuth: [] # Wajib melampirkan Authorization: Bearer <token>
+      responses:
+        '200':
+          description: Data profil user terautentikasi berhasil diambil
+        '401':
+          description: Token tidak disertakan atau sudah kedaluwarsa
+
+  /auth/logout:
+    post:
+      summary: Mencabut (Revoke) Bearer Token Aktif
+      description: Menghapus token dari tabel personal_access_tokens untuk mengakhiri sesi API.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Token berhasil dicabut secara permanen
+
+  # ----------------------------------------------------------------------------
+  # B. ENDPOINT KATALOG BUKU (GET /bukus, POST /bukus, GET /bukus/{id}, PUT, PATCH, DELETE)
+  # ----------------------------------------------------------------------------
   /bukus:
     get:
-      summary: Daftar katalog buku terpaginasi
+      summary: Mengambil Daftar Koleksi Buku Terpaginasi & Tautan HATEOAS
+      description: Mendukung filter, pencarian judul/penulis/ISBN, sorting, dan bebas N+1 problem.
+      parameters:
+        - name: search
+          in: query
+          schema: { type: string }
+          description: Kata kunci pencarian judul, penulis, atau ISBN
+        - name: kategori_id
+          in: query
+          schema: { type: integer }
+          description: Filter buku berdasarkan ID kategori
+        - name: tersedia
+          in: query
+          schema: { type: boolean }
+          description: Set 1 untuk menampilkan hanya buku yang memiliki stok > 0
+        - name: per_page
+          in: query
+          schema: { type: integer, default: 5 }
+          description: Jumlah baris data per halaman
+      responses:
+        '200':
+          description: Koleksi buku terpaginasi lengkap dengan kontrol HATEOAS level 3
+
     post:
-      summary: Tambah buku baru (Bearer Token)
+      summary: Menambah Buku Baru ke Katalog (201 Created + Header Location)
+      security:
+        - BearerAuth: [] # Mutasi data wajib memiliki token pustakawan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BukuInput'
+      responses:
+        '201':
+          description: Buku berhasil dibuat dan menyertakan header Location ke ID baru
+        '422':
+          description: Validasi input gagal (RFC 7807 Unprocessable Content)
+
   /bukus/{id}:
     get:
-      summary: Detail satu buku
+      summary: Mengambil Detail Satu Buku Berdasarkan ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+          description: ID unik buku di basis data
+      responses:
+        '200':
+          description: Detail data buku ditemukan beserta relasi kategori
+        '404':
+          description: Buku tidak ditemukan (RFC 7807 Resource Not Found)
+
     put:
-      summary: Penggantian utuh data buku (PUT)
+      summary: Penggantian Utuh Seluruh Atribut Buku (Full Replacement)
+      description: Seluruh atribut wajib dikirim lengkap; field opsional yang tidak dikirim direset ke NULL.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BukuInput'
+      responses:
+        '200':
+          description: Seluruh atribut representasi buku berhasil diganti
+
     patch:
-      summary: Pengubahan sebagian data buku (PATCH)
+      summary: Pembaruan Sebagian Atribut Buku (Partial Update)
+      description: Hanya atribut yang dikirim yang divalidasi dan diperbarui; field lain tetap aman utuh.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                stok: { type: integer, example: 12 }
+      responses:
+        '200':
+          description: Atribut buku berhasil diubah sebagian
+        '400':
+          description: Payload PATCH kosong
+
     delete:
-      summary: Hapus buku (Tolak 409 bila ada pinjaman aktif)
+      summary: Menghapus Buku dari Katalog
+      description: Ditolak dengan 409 Conflict jika buku masih memiliki peminjaman aktif.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '204':
+          description: Buku berhasil dihapus tanpa konten body (No Content)
+        '409':
+          description: Konflik integritas bisnis — Masih ada mahasiswa meminjam buku ini
+
+  # ----------------------------------------------------------------------------
+  # C. REST CONSUMER: REFERENSI BUKU EKSTERNAL (GET /bukus/{id}/referensi-eksternal)
+  # ----------------------------------------------------------------------------
+  /bukus/{id}/referensi-eksternal:
+    get:
+      summary: Mengambil Metadata Tambahan dari OpenLibrary REST API Eksternal
+      description: Laravel bertindak sebagai Service Consumer memanggil API publik berdasarkan ISBN.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Metadata nomor halaman dan judul resmi dari OpenLibrary berhasil diambil
+        '503':
+          description: Server upstream OpenLibrary sedang tidak dapat dihubungi atau timeout
+
+  # ----------------------------------------------------------------------------
+  # D. SIRKULASI PEMINJAMAN & PENGEMBALIAN BUKU (ACID CONCURRENCY LOCKING)
+  # ----------------------------------------------------------------------------
   /peminjamans:
     get:
-      summary: Daftar transaksi peminjaman (Bearer Token)
+      summary: Mengambil Daftar Sirkulasi Transaksi Peminjaman Terpaginasi
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [dipinjam, dikembalikan] }
+          description: Filter status transaksi
+        - name: nim
+          in: query
+          schema: { type: string }
+          description: Filter berdasarkan NIM mahasiswa
+      responses:
+        '200':
+          description: Daftar sirkulasi terpaginasi
+
     post:
-      summary: Peminjaman buku baru ACID (lockForUpdate)
+      summary: Mencatat Transaksi Peminjaman Buku Baru (ACID + lockForUpdate)
+      description: Mengunci baris buku secara eksklusif, memotong stok (-1), dan mencegah duplikasi pinjam.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PeminjamanInput'
+      responses:
+        '201':
+          description: Peminjaman berhasil dicatat & stok buku berkurang secara atomik
+        '409':
+          description: Mahasiswa masih memiliki pinjaman aktif untuk buku yang sama
+        '422':
+          description: Stok fisik buku sedang habis (0 tersisa)
+
   /peminjamans/{id}/kembalikan:
     patch:
-      summary: Pengembalian buku dan penambahan stok ACID
+      summary: Memproses Pengembalian Buku & Pemulihan Stok (+1) secara Atomik
+      description: Mengubah status menjadi 'dikembalikan', mengisi tanggal kembali, dan menambah stok (+1).
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+          description: ID transaksi peminjaman
+      responses:
+        '200':
+          description: Buku berhasil dikembalikan dan stok fisik buku dipulihkan
+        '409':
+          description: Buku sudah pernah dikembalikan sebelumnya

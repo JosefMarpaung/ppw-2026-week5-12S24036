@@ -1,129 +1,136 @@
-# SIPUS-Del (Tahap 2) — Sistem Informasi Perpustakaan Kampus Del
-### Praktikum Minggu 06: Konektivitas Basis Data Persisten, Transaksi ACID & Concurrency Locking, Fluent Query Builder, serta Manajemen Sesi & Autentikasi
+# SIPUS-Del (Tahap 3) — Sistem Informasi Perpustakaan Kampus Del
+### Praktikum Minggu 09: Arsitektur Web Services Terdistribusi, Implementasi Ringkas Layanan SOAP (WSDL & Envelope), serta Perancangan & Implementasi Mendalam RESTful Web API (Provider, Consumer, HATEOAS, Sanctum Token, RFC 7807, & OpenAPI 3.0) pada Laravel 11.x
 
+---
+
+## 📌 1. Identitas Mahasiswa
+* **Nama Lengkap:** Josef Christian Marpaung
+* **NIM:** 12S24036
+* **Program Studi:** Sarjana Sistem Informasi
+* **Fakultas:** Fakultas Informatika dan Teknik Elektro (FITE)
+* **Institusi:** Institut Teknologi Del
+* **Tahun Akademik:** Genap 2026/2027
 * **Mata Kuliah:** Pemrograman & Pengujian Web (12S3101)
-* **Institusi:** Institut Teknologi Del — Fakultas Informatika dan Teknik Elektro
-* **Tahun Akademik:** Ganjil 2026/2027
 * **Dosen Pengampu:** Chandro Pardede, S.Kom., M.Sc.
-* **NIM Pengembang:** 12S24036
-* **Nama Pengembang:** Josef Marpaung
-* **Branch Git:** `week6-db-session`
+* **Branch Git Aktif:** `week9-rest-api`
 
 ---
 
-## 📌 1. Kredensial Akun Pustakawan Uji Coba
+## 🏛️ 2. Analisis Kebutuhan & Kelayakan Web Services (Feasibility Analysis)
 
-Sesuai spesifikasi modul, akun pustakawan telah ditanamkan melalui `DatabaseSeeder.php`:
+### A. Matriks Peran Layanan pada SIPUS-Del
+Dalam arsitektur modern berprinsip *"No Super-App, No Super-Enterprise"*, SIPUS-Del memetakan batas tanggung jawab layanannya ke dalam dua peran utama:
 
-| Parameter | Kredensial Resmi |
-| :--- | :--- |
-| **Alamat Email** | `pustakawan@del.ac.id` |
-| **Kata Sandi (Password)** | `password123` |
-| **Hak Akses** | Pustakawan Penuh (CRUD Buku, Kategori, Sirkulasi Peminjaman & Pengembalian) |
+| No | Komponen Integrasi | Peran SIPUS-Del | Protokol / Arsitektur | Alasan Pemilihan & Kebutuhan Domain |
+| :---: | :--- | :---: | :---: | :--- |
+| 1 | **Sistem Bebas Pustaka Yudisium Kampus** | **Service Provider** | **SOAP XML (WSDL)** | Sistem administrasi kelulusan/yudisium IT Del berbasis enterprise legacy yang mewajibkan kontrak kaku WSDL untuk mengecek status pinjaman mahasiswa. |
+| 2 | **Katalog & Sirkulasi Mobile Mahasiswa / Kiosk** | **Service Provider** | **RESTful API (JSON)** | Membutuhkan pertukaran data yang sangat ringan (1–3 KB), format JSON native, dan stateless auth (Bearer Token) agar ramah jaringan ponsel. |
+| 3 | **Pengayaan Metadata Buku (ISBN Lookup)** | **Service Consumer** | **REST API (OpenLibrary)** | Mengambil sinopsis, jumlah halaman, dan judul resmi buku eksternal tanpa harus menginput manual atau menyimpan database buku dunia sendiri. |
+
+### B. Komparasi Teknis: Mengapa REST Dipilih untuk Mobile/Kiosk Dibanding SOAP?
+1. **Efisiensi Ukuran Payload (Bandwidth)**: Dokumen XML SOAP membutuhkan ratusan byte tag pembungkus `<soap:Envelope>`, sedangkan representasi REST JSON 5–8x lebih ringkas dan hemat kuota internet.
+2. **Kecepatan Parsing**: Klien mobile (Flutter/Android) dapat mem-parsing JSON secara native dan instan tanpa beban komputasi CPU berat akibat parsing pohon XML.
+3. **Pemanfaatan Semantik HTTP Murni**: REST memaksimalkan HTTP Verbs (`GET`, `POST`, `PUT`, `PATCH`, `DELETE`) dan Status Code resmi (`200`, `201`, `204`, `401`, `404`, `409`, `422`), berbeda dengan SOAP yang melakukan *tunneling* semua operasi hanya lewat `POST`.
 
 ---
 
-## 🗄️ 2. Diagram Hubungan Entitas (Entity Relationship Diagram - ERD)
+## 📋 3. Tabel Katalog Endpoint Web Services (SOAP & REST API v1)
 
-Aplikasi SIPUS-Del Tahap 2 menghubungkan entitas relasional persisten pada MySQL 8.0 (InnoDB) dengan integritas referensial ketat:
+| No | Metode | Endpoint URI | Proteksi Autentikasi | Deskripsi Operasi Bisnis | Kode Status Respons |
+| :---: | :---: | :--- | :---: | :--- | :---: |
+| 1 | **GET** | `/soap/sipus.wsdl` | Publik | Menyajikan dokumen kontrak WSDL resmi | `200 OK` (XML) |
+| 2 | **POST** | `/soap/sipus` | Publik (Bypass CSRF) | Memproses XML SOAP pengecekan bebas pustaka | `200 OK` / `500 Fault` |
+| 3 | **POST** | `/api/v1/auth/login` | Publik | Verifikasi kredensial & menerbitkan Bearer Token | `200 OK` / `401 Unauthorized` |
+| 4 | **GET** | `/api/v1/auth/me` | Bearer Token (`auth:sanctum`) | Menampilkan profil pemilik token aktif | `200 OK` / `401 Unauthorized` |
+| 5 | **POST** | `/api/v1/auth/logout` | Bearer Token (`auth:sanctum`) | Mencabut (*revoke*) token aktif dari database | `200 OK` |
+| 6 | **GET** | `/api/v1/bukus` | Publik | Katalog buku terpaginasi, search, sort, & HATEOAS | `200 OK` |
+| 7 | **GET** | `/api/v1/bukus/{id}` | Publik | Detail satu buku beserta relasi kategori | `200 OK` / `404 Not Found` |
+| 8 | **POST** | `/api/v1/bukus` | Bearer Token (`auth:sanctum`) | Menambah buku baru | `201 Created` + `Location` |
+| 9 | **PUT** | `/api/v1/bukus/{id}` | Bearer Token (`auth:sanctum`) | Mengganti seluruh isi buku (*Full Replacement*) | `200 OK` / `422 Unprocessable` |
+| 10 | **PATCH**| `/api/v1/bukus/{id}` | Bearer Token (`auth:sanctum`) | Mengubah sebagian atribut buku (*Partial Update*) | `200 OK` / `400 Bad Request` |
+| 11 | **DELETE**| `/api/v1/bukus/{id}` | Bearer Token (`auth:sanctum`) | Menghapus buku (tolak bila ada pinjaman aktif) | `204 No Content` / `409 Conflict` |
+| 12 | **GET** | `/api/v1/bukus/{id}/referensi-eksternal` | Publik | Konsumsi OpenLibrary API eksternal via fasad `Http` | `200 OK` / `503 Unavailable` |
+| 13 | **GET** | `/api/v1/peminjamans` | Bearer Token (`auth:sanctum`) | Daftar sirkulasi peminjaman terpaginasi | `200 OK` |
+| 14 | **POST** | `/api/v1/peminjamans` | Bearer Token (`auth:sanctum`) | Transaksi pinjam buku ACID (`lockForUpdate`) | `201 Created` / `409` / `422` |
+| 15 | **PATCH**| `/api/v1/peminjamans/{id}/kembalikan` | Bearer Token (`auth:sanctum`) | Pengembalian buku atomik & pemulihan stok (+1) | `200 OK` / `409 Conflict` |
 
-```mermaid
-erDiagram
-    KATEGORIS ||--o{ BUKUS : "memiliki relasi One-to-Many"
-    BUKUS ||--o{ PEMINJAMANS : "memiliki relasi One-to-Many"
-    USERS ||--o{ SESSIONS : "menyimpan state autentikasi"
+---
 
-    KATEGORIS {
-        bigint id PK
-        string kode_kategori UK
-        string nama_kategori
-        timestamps created_at
-    }
+## ⚙️ 4. Panduan Instalasi & Pengujian Cepat
 
-    BUKUS {
-        bigint id PK
-        string isbn UK
-        string judul
-        string penulis
-        string penerbit
-        int tahun_terbit
-        bigint kategori_id FK
-        int stok
-        text sinopsis
-        timestamps created_at
-    }
+### A. Persiapan Lingkungan & Database
+```bash
+# 1. Pindah ke branch pengerjaan praktikum Minggu 9
+git checkout week9-rest-api
 
-    PEMINJAMANS {
-        bigint id PK
-        string kode_pinjam UK
-        bigint buku_id FK
-        string nim_peminjam
-        string nama_peminjam
-        date tanggal_pinjam
-        date tanggal_jatuh_tempo
-        date tanggal_kembali
-        enum status "dipinjam, dikembalikan"
-        timestamps created_at
-    }
+# 2. Salin environment dan generate app key
+copy .env.example .env
+php artisan key:generate
 
-    USERS {
-        bigint id PK
-        string name
-        string email UK
-        string password
-        timestamps created_at
-    }
+# 3. Jalankan migrasi tabel (termasuk personal_access_tokens) & seeding data
+php artisan migrate:fresh --seed
+
+# 4. Jalankan server lokal
+php artisan serve
 ```
 
----
+### B. Kredensial Akun Pustakawan Uji Coba
+* **Email:** `pustakawan@del.ac.id`
+* **Kata Sandi:** `password123`
+* **Hak Akses:** Pustakawan Penuh (CRUD Katalog, Sirkulasi ACID, Penerbitan Bearer Token)
 
-## ⚙️ 3. Implementasi Spesifikasi Teknis Wajib
-
-### A. Skema Tabel `peminjamans` & Relasi Eloquent (Bobot 20%)
-* Tabel `peminjamans` memiliki Foreign Key `buku_id` yang terikat ke tabel `bukus` dengan aturan `cascadeOnDelete()`.
-* Model `Peminjaman` mengimplementasikan `$fillable` lengkap dan relasi `belongsTo(Buku::class)`.
-* Model `Buku` mengimplementasikan relasi `hasMany(Peminjaman::class)`.
-
-### B. Transaksi Basis Data ACID & Concurrency Locking (Bobot 25%)
-* **Peminjaman Buku:** Seluruh operasi dibungkus dalam `DB::transaction(..., 3)`. Baris buku dikunci menggunakan Pessimistic Locking `Buku::where('id', $id)->lockForUpdate()->firstOrFail()`.
-* **Pencegahan Race Condition & Rollback Stok 0:** Jika `stok < 1`, sistem melempar `\RuntimeException` yang memicu rollback otomatis sehingga stok buku tidak pernah minus.
-* **Pencegahan Duplikasi Pinjam:** Sistem memverifikasi bahwa mahasiswa dengan NIM yang sama tidak dapat meminjam buku yang sama jika belum dikembalikan.
-* **Pengembalian Buku:** Dibungkus dalam `DB::transaction()` + `lockForUpdate()`, mengubah status menjadi `'dikembalikan'`, mencatat `tanggal_kembali`, serta memulihkan kuantitas stok secara atomik (`$buku->increment('stok')`).
-* **Error Handling:** Menangkap `QueryException` dan mencatatnya ke `storage/logs/laravel.log` via `Log::error()`.
-
-### C. Fluent Query Builder (`DB::table`) & Optimasi Katalog (Bobot 15%)
-* **Kartu Analitik:** Menampilkan 4 kartu statistik perpustakaan menggunakan `DB::table()` (`count` judul, `sum` stok tersedia, `count` buku sedang dipinjam, dan `count` buku dikembalikan).
-* **Mitigasi N+1 Problem:** Katalog buku menggunakan `Buku::with('kategori')->withCount('peminjamans')` untuk menghitung relasi peminjaman tanpa overhead kueri berulang.
-* **Filter Dinamis:** Menerapkan klausa kondisional `when()` untuk pencarian berdasarkan judul, penulis, ISBN, dan filter kategori, dilengkapi paginasi `withQueryString()`.
-
-### D. Manajemen Sesi & Autentikasi Pustakawan (Bobot 25%)
-* **Autentikasi Aman:** Menggunakan `Auth::attempt()` pada `AuthController`.
-* **Anti-Session Fixation:** Wajib menjalankan `$request->session()->regenerate()` saat login untuk memperbarui Session ID.
-* **Logout Higienis:** Menjalankan `$request->session()->invalidate()` dan `regenerateToken()`.
-* **Proteksi Middleware:** Rute mutasi data (CRUD buku/kategori, peminjaman, pengembalian) diproteksi penuh oleh middleware `auth`.
-* **Manajemen State & HTTP Cookie:** Menyimpan waktu login pada Session (`login_timestamp`), riwayat pencarian terakhir (`last_search_keyword`), dan menyimpan email pengguna pada cookie aman via `Cookie::queue('del_last_user_email', ..., 10080)`.
+### C. Impor Koleksi Postman
+Berkas koleksi pengujian telah disediakan di dalam repositori:  
+📂 **`docs/SIPUS-Del-API-v1.postman_collection.json`**  
+Cukup buka aplikasi Postman -> klik tombol **Import** -> pilih berkas tersebut.
 
 ---
 
-## 📸 4. Bukti Pengujian Sistem (Audit Evidence)
+## 📸 5. Galeri Bukti Pengujian Sistem (7 Skenario Wajib Poin 5.3.5)
 
-### 1. Bukti Penolakan Transaksi ACID saat Stok = 0 (Rollback Atomik)
-*Sistem menolak peminjaman buku dengan stok 0 dan menampilkan peringatan sistem:*  
-![Bukti Penolakan Stok 0](docs/screenshots/bukti-acid-rollback.png)
-
-### 2. Bukti Pengembalian Buku Atomik & Pemulihan Stok
-*Status sirkulasi berhasil diubah menjadi Dikembalikan dan stok fisik buku bertambah otomatis:*  
-![Bukti Pengembalian Buku](docs/screenshots/bukti-pengembalian-buku.png)
-
-### 3. Bukti Audit Cookie HttpOnly & SameSite pada Browser DevTools
-*Inspeksi tab Application -> Cookies menunjukkan cookie `laravel_session` dan `del_last_user_email` terlindungi flag HttpOnly:*  
-![Bukti DevTools Cookie](docs/screenshots/bukti-audit-cookie-httponly.png)
+### 1. (a) Uji Layanan SOAP Bebas Pustaka Yudisium & SOAP Fault
+*Mengirim pesan XML `<soap:Envelope>` berisi NIM `12S24036`. Server merespons XML dengan `<active_loans>1</active_loans>` dan `<is_cleared>false</is_cleared>`. Jika NIM kosong, server mereturn blok `<soap:Fault>`:*  
+![Uji SOAP Clearance](docs/screenshots/01-soap-clearance.png)
 
 ---
 
-## 📜 5. Riwayat Commit Terstruktur (Conventional Commits)
-1. `feat(migration): create peminjamans table with foreign key to bukus`
-2. `feat(transaction): implement ACID book borrowing and return with lockForUpdate`
-3. `feat(query-builder): add library analytics dashboard and dynamic search`
-4. `feat(auth-session): implement librarian login, session regeneration, and cookies`
-5. `docs: complete week 6 documentation, ERD, and ACID test audit`
+### 2. (b) Login Pustakawan & Penerbitan Stateless Bearer Token Sanctum
+*Endpoint `POST /api/v1/auth/login` memverifikasi email & password hash, lalu menerbitkan token stateless `plainTextToken`:*  
+![Login Bearer Token](docs/screenshots/02-login-bearer-token.png)
+
+---
+
+### 3. (c) GET Katalog Terpaginasi & Pembuktian Hypermedia HATEOAS (RMM Level 3)
+*Endpoint `GET /api/v1/bukus` menampilkan katalog terpaginasi bebas N+1. Pada buku dengan stok > 0 muncul tautan navigasi `_links.pinjam_buku`, sedangkan pada buku dengan stok 0 tautan tersebut otomatis dihilangkan oleh sistem:*  
+![Katalog HATEOAS](docs/screenshots/03-get-katalog-hateoas.png)
+
+---
+
+### 4. (d) POST Buku Baru dengan Status 201 Created & Header Location
+*Endpoint `POST /api/v1/bukus` tervalidasi ketat, menyimpan buku baru, dan merespons kode status **201 Created** disertai header **`Location: /api/v1/bukus/{id}`**:*  
+![POST Buku 201 Location](docs/screenshots/04-post-buku-location.png)
+
+---
+
+### 5. (e) Bukti Nyata Perbedaan Semantik PUT vs PATCH
+*Pembuktian bahwa operasi **PUT** mengganti representasi buku secara utuh (field yang tidak dikirim direset), sedangkan operasi **PATCH** hanya memodifikasi sebagian atribut yang dikirim (misal `stok` saja) tanpa merusak atribut lainnya:*  
+![PUT vs PATCH](docs/screenshots/05-put-vs-patch.png)
+
+---
+
+### 6. (f) Transaksi Sirkulasi ACID, Pengurangan Stok, & Penolakan 409 / 422
+*Transaksi peminjaman dibungkus dalam `DB::transaction()` dengan `lockForUpdate()`. Berhasil memotong stok secara atomik, menolak duplikasi pinjaman aktif dengan **409 Conflict**, serta menolak peminjaman saat stok habis dengan **422 Unprocessable Content**:*  
+![Transaksi ACID Pinjam](docs/screenshots/06-transaksi-pinjam-acid.png)
+
+---
+
+### 7. (g) Konsumsi REST API Publik Eksternal (OpenLibrary & GitHub API)
+*Laravel bertindak sebagai Service Consumer memanggil API publik OpenLibrary via fasad `Http::timeout(8)` untuk mengambil metadata ISBN buku, serta dokumentasi latihan konsumsi GitHub REST API dengan token disensor:*  
+![Consumer REST External](docs/screenshots/07-rest-consumer-github.png)
+
+---
+
+## 📄 6. Dokumen Spesifikasi Layanan (Service Contract)
+Kontrak spesifikasi OpenAPI 3.0 resmi tersimpan pada:  
+📂 **`docs/openapi-sipus-v1.yaml`**  
+*(Dapat diinspeksi langsung melalui [Swagger Editor](https://editor.swagger.io/)).*
